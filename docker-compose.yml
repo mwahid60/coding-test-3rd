@@ -42,10 +42,15 @@ services:
     environment:
       - DATABASE_URL=postgresql://funduser:fundpass@postgres:5432/funddb
       - REDIS_URL=redis://redis:6379/0
+      - LLM_PROVIDER=${LLM_PROVIDER:-gemini}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-pro}
+      - GEMINI_EMBEDDING_MODEL=${GEMINI_EMBEDDING_MODEL:-models/embedding-001}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4-turbo-preview}
       - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
       - UPLOAD_DIR=/app/uploads
+      - PYTHONPATH=/app
     volumes:
       - ./backend:/app
       - backend_uploads:/app/uploads
@@ -56,7 +61,8 @@ services:
         condition: service_healthy
     command: >
       sh -c "
-        python app/db/init_db.py &&
+        export PYTHONPATH=/app &&
+        python -m app.db.init_db &&
         uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
       "
 

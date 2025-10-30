@@ -28,10 +28,22 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
     
+    # LLM Provider
+    LLM_PROVIDER: str = "gemini"  # openai, gemini, ollama
+    
     # OpenAI
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4-turbo-preview"
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
+    
+    # Google Gemini
+    GEMINI_API_KEY: str = "AIzaSyCRm3EeSDGHU0l0UcXROJFAoFY14uoQB-M"
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_EMBEDDING_MODEL: str = "models/embedding-001"
+    
+    # Ollama
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "llama3.2"
     
     # Anthropic (optional)
     ANTHROPIC_API_KEY: str = ""

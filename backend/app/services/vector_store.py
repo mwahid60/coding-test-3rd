@@ -1,14 +1,16 @@
 """
 Vector store service using pgvector (PostgreSQL extension)
 
-TODO: Implement vector storage using pgvector
-- Create embeddings table in PostgreSQL
-- Store document chunks with vector embeddings
-- Implement similarity search using pgvector operators
-- Handle metadata filtering
+This module handles:
+- Embedding generation (OpenAI, Gemini, or HuggingFace)
+- Vector storage in PostgreSQL with pgvector
+- Similarity search using cosine distance
+- Metadata filtering
 """
 from typing import List, Dict, Any, Optional
 import numpy as np
+import json
+import google.generativeai as genai
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from langchain_openai import OpenAIEmbeddings
@@ -26,33 +28,48 @@ class VectorStore:
         self._ensure_extension()
     
     def _initialize_embeddings(self):
-        """Initialize embedding model"""
-        if settings.OPENAI_API_KEY:
+        """Initialize embedding model based on provider"""
+        provider = settings.LLM_PROVIDER.lower()
+        
+        if provider == "gemini" and settings.GEMINI_API_KEY:
+            # Use Gemini embeddings
+            genai.configure(api_key=settings.GEMINI_API_KEY)
+            return "gemini"  # Will use genai.embed_content()
+        
+        elif provider == "openai" and settings.OPENAI_API_KEY:
             return OpenAIEmbeddings(
                 model=settings.OPENAI_EMBEDDING_MODEL,
                 openai_api_key=settings.OPENAI_API_KEY
             )
+        
         else:
-            # Fallback to local embeddings
+            # Fallback to local embeddings (free)
+            print("Using local HuggingFace embeddings (no API key required)")
             return HuggingFaceEmbeddings(
                 model_name="sentence-transformers/all-MiniLM-L6-v2"
             )
     
     def _ensure_extension(self):
         """
-        Ensure pgvector extension is enabled
+        Ensure pgvector extension is enabled and create embeddings table
         
-        TODO: Implement this method
-        - Execute: CREATE EXTENSION IF NOT EXISTS vector;
-        - Create embeddings table if not exists
+        Dimensions:
+        - Gemini: 768
+        - OpenAI text-embedding-3-small: 1536
+        - HuggingFace all-MiniLM-L6-v2: 384
         """
         try:
             # Enable pgvector extension
             self.db.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            self.db.commit()
             
-            # Create embeddings table
-            # Dimension: 1536 for OpenAI, 384 for sentence-transformers
-            dimension = 1536 if settings.OPENAI_API_KEY else 384
+            # Determine embedding dimension based on provider
+            if self.embeddings == "gemini":
+                dimension = 768
+            elif settings.LLM_PROVIDER == "openai" and settings.OPENAI_API_KEY:
+                dimension = 1536
+            else:
+                dimension = 384  # HuggingFace
             
             create_table_sql = f"""
             CREATE TABLE IF NOT EXISTS document_embeddings (
@@ -80,10 +97,9 @@ class VectorStore:
         """
         Add a document to the vector store
         
-        TODO: Implement this method
-        - Generate embedding for content
-        - Insert into document_embeddings table
-        - Store metadata as JSONB
+        Args:
+            content: Text content to embed
+            metadata: Document metadata (document_id, fund_id, page, etc.)
         """
         try:
             # Generate embedding
@@ -101,9 +117,10 @@ class VectorStore:
                 "fund_id": metadata.get("fund_id"),
                 "content": content,
                 "embedding": str(embedding_list),
-                "metadata": str(metadata)
+                "metadata": json.dumps(metadata)
             })
             self.db.commit()
+            
         except Exception as e:
             print(f"Error adding document: {e}")
             self.db.rollback()
@@ -185,10 +202,23 @@ class VectorStore:
             return []
     
     async def _get_embedding(self, text: str) -> np.ndarray:
-        """Generate embedding for text"""
-        if hasattr(self.embeddings, 'embed_query'):
+        """Generate embedding for text based on provider"""
+        
+        if self.embeddings == "gemini":
+            # Use Gemini API for embeddings
+            result = genai.embed_content(
+                model=settings.GEMINI_EMBEDDING_MODEL,
+                content=text,
+                task_type="retrieval_document"
+            )
+            embedding = result['embedding']
+        
+        elif hasattr(self.embeddings, 'embed_query'):
+            # OpenAI or similar
             embedding = self.embeddings.embed_query(text)
+        
         else:
+            # HuggingFace or similar
             embedding = self.embeddings.encode(text)
         
         return np.array(embedding, dtype=np.float32)
