@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     
     # Google Gemini
-    GEMINI_API_KEY: str = "AIzaSyCRm3EeSDGHU0l0UcXROJFAoFY14uoQB-M"
+    GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.5-flash"
     GEMINI_EMBEDDING_MODEL: str = "models/embedding-001"
     
