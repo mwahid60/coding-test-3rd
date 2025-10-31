@@ -155,7 +155,8 @@ class DocumentProcessor:
                 text_chunks = self._chunk_text(all_text_content)
                 stats["text_chunks"] = len(text_chunks)
                 
-                # Store chunks in vector database
+                # Store chunks in vector database (with error handling)
+                embedding_errors = 0
                 for chunk in text_chunks:
                     try:
                         await self.vector_store.add_document(
@@ -168,7 +169,14 @@ class DocumentProcessor:
                             }
                         )
                     except Exception as e:
-                        stats["errors"].append(f"Vector store error: {str(e)}")
+                        embedding_errors += 1
+                        # Don't add all errors to avoid spam, just count them
+                        if embedding_errors <= 3:
+                            stats["errors"].append(f"Vector store error: {str(e)}")
+                
+                # Log summary if there were many errors
+                if embedding_errors > 3:
+                    stats["errors"].append(f"Total vector store errors: {embedding_errors}. Embeddings may not be available for search.")
             
             if stats["errors"]:
                 stats["status"] = "completed_with_errors"

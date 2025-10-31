@@ -33,6 +33,29 @@ async def upload_document(
     if not file.filename.endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
     
+    # Auto-create fund if not provided or doesn't exist
+    if not fund_id:
+        from app.models.fund import Fund
+        # Try to get or create default fund
+        default_fund = db.query(Fund).filter(Fund.name == "Default Fund").first()
+        if not default_fund:
+            default_fund = Fund(
+                name="Default Fund",
+                gp_name="Default GP",
+                fund_type="Private Equity",
+                vintage_year=2024
+            )
+            db.add(default_fund)
+            db.commit()
+            db.refresh(default_fund)
+        fund_id = default_fund.id
+    else:
+        # Verify fund exists
+        from app.models.fund import Fund
+        fund = db.query(Fund).filter(Fund.id == fund_id).first()
+        if not fund:
+            raise HTTPException(status_code=404, detail=f"Fund with id {fund_id} not found")
+    
     # Validate file size
     file.file.seek(0, 2)
     file_size = file.file.tell()

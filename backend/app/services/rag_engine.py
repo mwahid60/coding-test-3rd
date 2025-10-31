@@ -23,29 +23,41 @@ class RAGEngine:
         self.llm = self._initialize_llm()
     
     def _initialize_llm(self):
-        """Initialize LLM based on provider"""
+        """Initialize LLM based on provider with fallback"""
         provider = settings.LLM_PROVIDER.lower()
         
-        if provider == "gemini" and settings.GEMINI_API_KEY:
-            # Configure Gemini
-            genai.configure(api_key=settings.GEMINI_API_KEY)
-            return genai.GenerativeModel(settings.GEMINI_MODEL)
+        # Try Gemini if configured
+        if provider == "gemini" and settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "your-gemini-api-key-here":
+            try:
+                genai.configure(api_key=settings.GEMINI_API_KEY)
+                print("Using Gemini LLM")
+                return genai.GenerativeModel(settings.GEMINI_MODEL)
+            except Exception as e:
+                print(f"Gemini LLM failed: {e}")
         
-        elif provider == "openai" and settings.OPENAI_API_KEY:
-            return ChatOpenAI(
-                model=settings.OPENAI_MODEL,
-                openai_api_key=settings.OPENAI_API_KEY,
-                temperature=0
-            )
+        # Try OpenAI if configured
+        if settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.startswith("sk-"):
+            try:
+                print("Using OpenAI LLM")
+                return ChatOpenAI(
+                    model=settings.OPENAI_MODEL,
+                    openai_api_key=settings.OPENAI_API_KEY,
+                    temperature=0
+                )
+            except Exception as e:
+                print(f"OpenAI LLM failed: {e}")
         
-        elif provider == "ollama":
+        # Try Ollama as fallback
+        try:
+            print("Trying Ollama LLM (local)")
             return Ollama(
                 base_url=settings.OLLAMA_BASE_URL,
                 model=settings.OLLAMA_MODEL
             )
-        
-        else:
-            raise ValueError(f"Invalid LLM provider: {provider}")
+        except Exception as e:
+            print(f"Ollama LLM not available: {e}")
+            # Return None - will handle in query methods
+            return None
     
     async def query(
         self, 

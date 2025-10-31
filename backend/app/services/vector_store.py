@@ -31,23 +31,30 @@ class VectorStore:
         """Initialize embedding model based on provider"""
         provider = settings.LLM_PROVIDER.lower()
         
-        if provider == "gemini" and settings.GEMINI_API_KEY:
-            # Use Gemini embeddings
-            genai.configure(api_key=settings.GEMINI_API_KEY)
-            return "gemini"  # Will use genai.embed_content()
+        # Try Gemini if configured and key is valid
+        if provider == "gemini" and settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "your-gemini-api-key-here":
+            try:
+                genai.configure(api_key=settings.GEMINI_API_KEY)
+                print("Using Gemini embeddings")
+                return "gemini"  # Will use genai.embed_content()
+            except Exception as e:
+                print(f"Gemini embeddings failed: {e}. Falling back to HuggingFace.")
         
-        elif provider == "openai" and settings.OPENAI_API_KEY:
-            return OpenAIEmbeddings(
-                model=settings.OPENAI_EMBEDDING_MODEL,
-                openai_api_key=settings.OPENAI_API_KEY
-            )
+        # Try OpenAI if configured
+        elif provider == "openai" and settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.startswith("sk-"):
+            try:
+                return OpenAIEmbeddings(
+                    model=settings.OPENAI_EMBEDDING_MODEL,
+                    openai_api_key=settings.OPENAI_API_KEY
+                )
+            except Exception as e:
+                print(f"OpenAI embeddings failed: {e}. Falling back to HuggingFace.")
         
-        else:
-            # Fallback to local embeddings (free)
-            print("Using local HuggingFace embeddings (no API key required)")
-            return HuggingFaceEmbeddings(
-                model_name="sentence-transformers/all-MiniLM-L6-v2"
-            )
+        # Fallback to local embeddings (free, no API key needed)
+        print("Using local HuggingFace embeddings (no API key required)")
+        return HuggingFaceEmbeddings(
+            model_name="sentence-transformers/all-MiniLM-L6-v2"
+        )
     
     def _ensure_extension(self):
         """
