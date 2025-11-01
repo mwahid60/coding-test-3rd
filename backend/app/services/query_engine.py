@@ -3,35 +3,43 @@ Query engine service for RAG-based question answering
 """
 from typing import Dict, Any, List, Optional
 import time
-from langchain_openai import ChatOpenAI
-from langchain_community.llms import Ollama
-from langchain.prompts import ChatPromptTemplate
+import google.generativeai as genai
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.prompts import ChatPromptTemplate
 from app.core.config import settings
+from app.core.logger import get_logger
 from app.services.vector_store import VectorStore
 from app.services.metrics_calculator import MetricsCalculator
 from sqlalchemy.orm import Session
+
+logger = get_logger(__name__)
 
 
 class QueryEngine:
     """RAG-based query engine for fund analysis"""
     
     def __init__(self, db: Session):
+        logger.info("🔧 Initializing QueryEngine")
         self.db = db
         self.vector_store = VectorStore()
         self.metrics_calculator = MetricsCalculator(db)
         self.llm = self._initialize_llm()
+        logger.info("✅ QueryEngine initialized successfully")
     
     def _initialize_llm(self):
         """Initialize LLM"""
-        if settings.OPENAI_API_KEY:
-            return ChatOpenAI(
-                model=settings.OPENAI_MODEL,
+        logger.info("🤖 Initializing LLM")
+        if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "":
+            genai.configure(api_key=settings.GEMINI_API_KEY)
+            logger.info(f"✅ Using Gemini model: {settings.GEMINI_MODEL}")
+            return ChatGoogleGenerativeAI(
+                model=settings.GEMINI_MODEL,
                 temperature=0,
-                openai_api_key=settings.OPENAI_API_KEY
+                google_api_key=settings.GEMINI_API_KEY
             )
         else:
-            # Fallback to local LLM
-            return Ollama(model="llama2")
+            logger.error("❌ GEMINI_API_KEY not configured")
+            raise ValueError("GEMINI_API_KEY not configured. Please set it in .env file")
     
     async def process_query(
         self, 
@@ -51,24 +59,30 @@ class QueryEngine:
             Response with answer, sources, and metrics
         """
         start_time = time.time()
+        logger.info(f"▶️  Processing query: '{query[:50]}...' (fund_id={fund_id})")
         
         # Step 1: Classify query intent
         intent = await self._classify_intent(query)
+        logger.info(f"🎯 Query intent classified as: {intent}")
         
         # Step 2: Retrieve relevant context from vector store
         filter_metadata = {"fund_id": fund_id} if fund_id else None
+        logger.info(f"🔍 Searching vector store (k={settings.TOP_K_RESULTS})")
         relevant_docs = await self.vector_store.similarity_search(
             query=query,
             k=settings.TOP_K_RESULTS,
             filter_metadata=filter_metadata
         )
+        logger.info(f"📄 Found {len(relevant_docs)} relevant documents")
         
         # Step 3: Calculate metrics if needed
         metrics = None
         if intent == "calculation" and fund_id:
+            logger.info(f"📊 Calculating metrics for fund_id={fund_id}")
             metrics = self.metrics_calculator.calculate_all_metrics(fund_id)
         
         # Step 4: Generate response using LLM
+        logger.info("🤖 Generating LLM response")
         answer = await self._generate_response(
             query=query,
             context=relevant_docs,
@@ -77,6 +91,7 @@ class QueryEngine:
         )
         
         processing_time = time.time() - start_time
+        logger.info(f"✅ Query processed successfully in {processing_time:.2f}s")
         
         return {
             "answer": answer,
@@ -102,6 +117,7 @@ class QueryEngine:
         Returns:
             'calculation', 'definition', 'retrieval', or 'general'
         """
+        logger.debug(f"Classifying intent for query: {query[:50]}...")
         query_lower = query.lower()
         
         # Calculation keywords
@@ -138,12 +154,14 @@ class QueryEngine:
         conversation_history: List[Dict[str, str]]
     ) -> str:
         """Generate response using LLM"""
+        logger.debug(f"Generating response with {len(context)} context documents")
         
         # Build context string
         context_str = "\n\n".join([
             f"[Source {i+1}]\n{doc['content']}"
             for i, doc in enumerate(context[:3])  # Use top 3 sources
         ])
+        logger.debug(f"Built context string with {len(context[:3])} sources")
         
         # Build metrics string
         metrics_str = ""
@@ -199,9 +217,13 @@ Please provide a helpful answer based on the context and metrics provided.""")
         )
         
         try:
+            logger.debug("Invoking LLM...")
             response = self.llm.invoke(messages)
             if hasattr(response, 'content'):
+                logger.info(f"✅ LLM response generated (length: {len(response.content)} chars)")
                 return response.content
+            logger.info(f"✅ LLM response generated (length: {len(str(response))} chars)")
             return str(response)
         except Exception as e:
+            logger.error(f"❌ Error generating LLM response: {str(e)}")
             return f"I apologize, but I encountered an error generating a response: {str(e)}"
