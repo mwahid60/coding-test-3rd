@@ -116,7 +116,7 @@ class VectorStore:
             # Insert into database
             insert_sql = text("""
                 INSERT INTO document_embeddings (document_id, fund_id, content, embedding, metadata)
-                VALUES (:document_id, :fund_id, :content, :embedding::vector, :metadata::jsonb)
+                VALUES (:document_id, :fund_id, :content, CAST(:embedding AS vector), CAST(:metadata AS jsonb))
             """)
             
             self.db.execute(insert_sql, {
@@ -179,10 +179,10 @@ class VectorStore:
                     fund_id,
                     content,
                     metadata,
-                    1 - (embedding <=> :query_embedding::vector) as similarity_score
+                    1 - (embedding <=> CAST(:query_embedding AS vector)) as similarity_score
                 FROM document_embeddings
                 {where_clause}
-                ORDER BY embedding <=> :query_embedding::vector
+                ORDER BY embedding <=> CAST(:query_embedding AS vector)
                 LIMIT :k
             """)
             
