@@ -4,7 +4,12 @@ FastAPI main application entry point
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
+from app.core.logger import setup_logging, get_logger
 from app.api.endpoints import documents, funds, chat, metrics
+
+# Setup logging
+setup_logging()
+logger = get_logger(__name__)
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

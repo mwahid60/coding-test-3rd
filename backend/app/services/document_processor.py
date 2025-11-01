@@ -12,10 +12,13 @@ import pdfplumber
 import re
 from sqlalchemy.orm import Session
 from app.core.config import settings
+from app.core.logger import get_logger
 from app.services.table_parser import TableParser
 from app.services.vector_store import VectorStore
 from app.db.session import SessionLocal
 from app.models.transaction import CapitalCall, Distribution, Adjustment
+
+logger = get_logger(__name__)
 
 
 class DocumentProcessor:
@@ -47,6 +50,8 @@ class DocumentProcessor:
         Returns:
             Processing result with statistics
         """
+        logger.info(f"▶️  Starting document processing: file={file_path}, doc_id={document_id}, fund_id={fund_id}")
+        
         stats = {
             "status": "completed",
             "pages_processed": 0,
@@ -62,8 +67,10 @@ class DocumentProcessor:
         
         try:
             # Open PDF
+            logger.info(f"📄 Opening PDF file: {file_path}")
             with pdfplumber.open(file_path) as pdf:
                 stats["pages_processed"] = len(pdf.pages)
+                logger.info(f"📊 Found {len(pdf.pages)} pages in PDF")
                 
                 all_text_content = []
                 all_tables = []
@@ -98,12 +105,14 @@ class DocumentProcessor:
                         continue
                 
                 # Process tables and classify them
+                logger.info(f"📋 Processing {len(all_tables)} tables found")
                 for table_info in all_tables:
                     try:
                         table_type = self.table_parser.classify_table(
                             table_info["table"], 
                             table_info["context"]
                         )
+                        logger.info(f"🏷️  Table classified as: {table_type}")
                         
                         if table_type == "capital_call":
                             records = self.table_parser.parse_capital_call_table(
@@ -149,13 +158,18 @@ class DocumentProcessor:
                         continue
                 
                 # Commit database changes
+                logger.info(f"💾 Committing {stats['capital_calls'] + stats['distributions'] + stats['adjustments']} records to database")
                 db.commit()
+                logger.info("✅ Database commit successful")
                 
                 # Chunk text for vector storage
+                logger.info("✂️  Chunking text for embeddings")
                 text_chunks = self._chunk_text(all_text_content)
                 stats["text_chunks"] = len(text_chunks)
+                logger.info(f"📊 Created {len(text_chunks)} text chunks")
                 
                 # Store chunks in vector database (with error handling)
+                logger.info("📦 Storing embeddings in vector database")
                 embedding_errors = 0
                 for chunk in text_chunks:
                     try:
@@ -180,14 +194,19 @@ class DocumentProcessor:
             
             if stats["errors"]:
                 stats["status"] = "completed_with_errors"
+                logger.warning(f"⚠️  Completed with {len(stats['errors'])} errors")
+            else:
+                logger.info("✅ Document processing completed successfully")
         
         except Exception as e:
             stats["status"] = "failed"
             stats["error"] = str(e)
+            logger.error(f"❌ Document processing failed: {str(e)}")
         
         finally:
             db.close()
         
+        logger.info(f"📊 Final stats: {stats['capital_calls']} calls, {stats['distributions']} distributions, {stats['adjustments']} adjustments, {stats['text_chunks']} chunks")
         return stats
     
     def _chunk_text(self, text_content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
