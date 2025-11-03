@@ -52,31 +52,50 @@ class TableParser:
         
         # Get first row (headers) and convert to lowercase
         headers = [str(cell).lower() for cell in table[0] if cell]
-        all_text = " ".join(headers) + " " + context.lower()
+        headers_text = " ".join(headers)
+        all_text = headers_text + " " + context.lower()
         
-        # Check for capital call indicators
-        capital_call_score = sum(
-            1 for keyword in self.CAPITAL_CALL_KEYWORDS 
-            if keyword in all_text
-        )
+        # Strong indicators (check headers first for precise matching)
+        # Check for "Recallable" column - strong indicator of distribution table
+        if "recallable" in headers_text:
+            return "distribution"
+        
+        # Check for "Call Number" column - strong indicator of capital call table
+        if "call number" in headers_text or "call no" in headers_text:
+            return "capital_call"
+        
+        # Check data rows for additional context
+        data_sample = ""
+        if len(table) > 1:
+            # Sample first 2 data rows
+            for row in table[1:3]:
+                data_sample += " ".join([str(cell).lower() for cell in row if cell]) + " "
+        
+        combined_text = all_text + " " + data_sample
+        
+        # Check for adjustment indicators first (highest priority after specific columns)
+        adjustment_score = 0
+        for keyword in self.ADJUSTMENT_KEYWORDS:
+            if keyword in combined_text:
+                adjustment_score += 2  # Higher weight
         
         # Check for distribution indicators
-        distribution_score = sum(
-            1 for keyword in self.DISTRIBUTION_KEYWORDS 
-            if keyword in all_text
-        )
+        distribution_score = 0
+        for keyword in self.DISTRIBUTION_KEYWORDS:
+            if keyword in combined_text:
+                distribution_score += 1
         
-        # Check for adjustment indicators
-        adjustment_score = sum(
-            1 for keyword in self.ADJUSTMENT_KEYWORDS 
-            if keyword in all_text
-        )
+        # Check for capital call indicators
+        capital_call_score = 0
+        for keyword in self.CAPITAL_CALL_KEYWORDS:
+            if keyword in combined_text:
+                capital_call_score += 1
         
         # Return classification based on highest score
         scores = {
-            'capital_call': capital_call_score,
+            'adjustment': adjustment_score,
             'distribution': distribution_score,
-            'adjustment': adjustment_score
+            'capital_call': capital_call_score
         }
         
         max_score = max(scores.values())
@@ -336,3 +355,65 @@ class TableParser:
             
         except Exception:
             return None
+
+
+if __name__ == "__main__":
+    """Simple test with PDF file"""
+    import pdfplumber
+    from pathlib import Path
+    
+    print("="*60)
+    print("TableParser Test")
+    print("="*60)
+    
+    # PDF path
+    pdf_path = Path(__file__).parent.parent.parent.parent / "files" / "Sample_Fund_Performance_Report.pdf"
+    
+    if not pdf_path.exists():
+        print(f"\nERROR: PDF not found at {pdf_path}")
+        exit(1)
+    
+    print(f"\nReading: {pdf_path.name}\n")
+    
+    parser = TableParser()
+    
+    with pdfplumber.open(pdf_path) as pdf:
+        print(f"Total pages: {len(pdf.pages)}\n")
+        
+        for page_num, page in enumerate(pdf.pages, 1):
+            tables = page.extract_tables()
+            print(f"Page {page_num}: Found {len(tables)} table(s)")
+            print(f"\n{tables}")
+            
+    #         for i, table in enumerate(tables, 1):
+    #             if not table or len(table) < 2:
+    #                 continue
+                
+    #             # Classify
+    #             table_type = parser.classify_table(table, page.extract_text() or "")
+    #             print(f"  Table {i}: {table_type or 'Unknown'}")
+                
+    #             # Parse and show count
+    #             if table_type == 'capital_call':
+    #                 results = parser.parse_capital_call_table(table, fund_id=1)
+    #                 print(f"    -> Parsed {len(results)} capital calls")
+    #                 for r in results:
+    #                     print(f"       {r['call_date']}: ${r['amount']:,.2f}")
+                
+    #             elif table_type == 'distribution':
+    #                 results = parser.parse_distribution_table(table, fund_id=1)
+    #                 print(f"    -> Parsed {len(results)} distributions")
+    #                 for r in results:
+    #                     print(f"       {r['distribution_date']}: ${r['amount']:,.2f}")
+                
+    #             elif table_type == 'adjustment':
+    #                 results = parser.parse_adjustment_table(table, fund_id=1)
+    #                 print(f"    -> Parsed {len(results)} adjustments")
+    #                 for r in results:
+    #                     print(f"       {r['adjustment_date']}: ${r['amount']:,.2f}")
+            
+    #         print()
+    
+    # print("="*60)
+    # print("Test completed")
+    # print("="*60)
